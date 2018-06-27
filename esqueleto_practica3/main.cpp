@@ -38,7 +38,7 @@ const float AMBIENT_INTENSITY = 0.005f;
 
 const float GO_ON_PROBABILITY = 0.1f;
 
-const int NUMBER_SAMPLES = 2400;
+const int NUMBER_SAMPLES = 400;
 
 const int HALTON_NUMBER_1 = 3;
 const int HALTON_NUMBER_2 = 5;
@@ -329,13 +329,13 @@ Spectrum indirectRadiance(World* world, Ray& ray, IntersectInfo info, int recurs
 		float r1 = ruletaRusa();
 		float r2 = ruletaRusa();
 
-		float anglePhi = 2 * M_PI * r1;
+		float rd = sqrt(r1);
+		float phid = 2 * M_PI* r2;
+		float theta = asin(rd);
 
-		float valueToSqrt = 1.0f - (r2 * r2);
-
-		float x = cos(anglePhi) * (sqrt(valueToSqrt));
-		float y = sin(anglePhi) * (sqrt(valueToSqrt));
-		float z = r2;
+		float x = rd * cos(phid);
+		float y = rd * sin(phid);
+		float z = sqrt(1 - (rd * rd));
 
 		gmtl::Point3f newOrigin = info.position + info.normal * 0.001f;
 		gmtl::Rayf indirectRay = gmtl::Rayf(newOrigin, gmtl::Vec3f(x, y, z));
@@ -359,7 +359,7 @@ Spectrum indirectRadiance(World* world, Ray& ray, IntersectInfo info, int recurs
 		float pdf;
 		info.material->Sample(wi, pdf, info);
 
-		indirectLight = indirectLight / pdf;
+		indirectLight = indirectLight / (pdf * (cos(theta) * M_PI));
 
 		// - Dividir por ruleta_rusa_p
 		indirectLight = indirectLight / GO_ON_PROBABILITY;
