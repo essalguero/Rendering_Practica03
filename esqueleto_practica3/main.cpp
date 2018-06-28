@@ -38,10 +38,18 @@ const float AMBIENT_INTENSITY = 0.005f;
 
 const float GO_ON_PROBABILITY = 0.1f;
 
-const int NUMBER_SAMPLES = 400;
+const int NUMBER_SAMPLES = 20;
 
 const int HALTON_NUMBER_1 = 3;
 const int HALTON_NUMBER_2 = 5;
+
+const float DOF_DISTANCE = 24.0f;
+const float DOF_ERROR_MARGIN = 1.0f;
+const float DOF_RADIUS = 2.0f;
+const int DOF_SAMPLES = 10;
+
+
+#define CALCULATE_DOF true
 
 
 Spectrum traceRay(World* world, Ray& ray, int recursivityDepth = 0);
@@ -453,8 +461,6 @@ Spectrum traceRay(World* world, Ray& ray, int recursivityDepth)
 		// Calcular iluminacion indirecta (indirectRadiance)
 		Spectrum indirectLight = indirectRadiance(world, ray, info, recursivityDepth);
 
-		float distance = sqrt(info.position[0] * info.position[0] + info.position[1] * info.position[1] + info.position[2] * info.position[2]);
-
 		// Iluminacion total = emitida + directa + indirecta
 		return (directLight + indirectLight);
 		//return directLight;
@@ -582,6 +588,62 @@ Spectrum traceRay2(World* world, Ray& ray, gmtl::Vec3f cameraPosition, int recur
 	}
 }
 
+
+Spectrum applyDOF(World* world, Ray& ray)
+{
+	gmtl::Vec3f direction = ray.getDir();
+
+	//Calculate the position where the focus is set
+	normalize(direction);
+	gmtl::Vec3f focalPoint = ray.getOrigin() + direction * DOF_DISTANCE;
+
+	// Variables necesarias para calcular los rayos auxiliares para aplicar el desenfoque
+	gmtl::Point3f dofOrigin;
+	Spectrum dofColor;
+	Ray dofRay;
+
+	Spectrum dofSpectrum = Spectrum(0.0f);
+
+	//LOG(INFO) << "Camera Position: " << cameraPosition;
+	//LOG(INFO) << "Ray Direction: " << direction;
+
+	// generar varios rayos secundarios
+	for (int sample = 1; sample <= DOF_SAMPLES; ++sample)
+	{
+		// Calculate new Origin point
+		float randX = ruletaRusa() - 0.5f;
+		float randY = ruletaRusa() - 0.5f;
+		float randZ = ruletaRusa() - 0.5f;
+
+		gmtl::Vec3f calculatedDir = gmtl::Vec3f(randX, randY, randZ);
+
+
+		// Calculate a new position from which trace a ray
+		//camera.getCameraPosition()-(r/2)*u-(r/2)*v+r*(du)*u+r*(dv)*v
+		dofOrigin = ray.getOrigin() + calculatedDir * DOF_RADIUS;
+
+		// Now calculate different rays that pass through this focal point
+		dofRay = generateRay(dofOrigin, focalPoint);
+
+		dofColor = traceRay(world, dofRay, 1);
+
+		//LOG(INFO) << "Calculating colors for DOF: " << dofColor;
+
+
+		/*dofSpectrum[0] += dofColor[0];
+		dofSpectrum[1] += dofColor[1];
+		dofSpectrum[2] += dofColor[2];*/
+
+		dofSpectrum += dofColor;
+
+
+	}
+
+	dofSpectrum /= DOF_SAMPLES;
+
+	return dofSpectrum;
+}
+
 void render_image(World* world, unsigned int dimX, unsigned int dimY, float* image, float* alpha)
 {
 	Camera* camera = world->getCamera();
@@ -590,16 +652,26 @@ void render_image(World* world, unsigned int dimX, unsigned int dimY, float* ima
 
 	srand(time(NULL));
 
-#pragma omp parallel for schedule(dynamic)
-	for (int i = 0; i < dimY; ++i)
+	// Obtener vector normal del plano de la camara
+	Ray camRay = camera->generateRay(dimX / 2, dimY / 2);
+	gmtl::Vec3f cameraNormal = camRay.getDir();
+	normalize(cameraNormal);
+	gmtl::Point3f cameraPosition = camRay.getOrigin();
+	
+
+
+
+
+//#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i < dimY; ++i) //600
 	{
-		for (int j = 0; j < dimX; ++j)
+		for (int j = 0; j < dimX; ++j) //540
 		{
 
 			//std::cout << "Trace ray for pixel (" << i << ", " << j << ")" << std::endl;
 
 			//Calcular rayo desde cámara a pixel
-			Ray ray = camera->generateRay(j, i);
+			Ray ray;
 
 			Spectrum totalColor = Spectrum(0, 0, 0);
 
@@ -624,6 +696,101 @@ void render_image(World* world, unsigned int dimX, unsigned int dimY, float* ima
 			image[(i * dimX * 3) + (j * 3)] = totalColor[0];
 			image[(i * dimX * 3) + (j * 3) + 1] = totalColor[1];
 			image[(i * dimX * 3) + (j * 3) + 2] = totalColor[2];
+
+
+			// Depth of field calculation
+			if (CALCULATE_DOF)
+			{
+				// Calcular la intersección con el mundo (usando el mismo rayo generado para calcular la luz)
+				IntersectInfo info;
+				world->intersect(info, ray);
+
+				// Evitar calcular Depth of field si no se colisiona con ningun objeto
+				if (info.objectID != InvalidObjectID)
+				{
+					// Calcular la distancia a la que se enfoca
+					gmtl::Vec3f distanceVector = info.position - ray.getOrigin();
+					float objectDistance = gmtl::length(distanceVector);
+
+					Spectrum dofSpectrum = Spectrum(0.0f);
+
+					//LOG(INFO) << "Focal lenght: " << FOCAL_DISTANCE;
+
+					// Calcular si el objeto está en el rango de la imagen donde está correctamente enfocado
+					float absoluteDistance = abs(objectDistance - DOF_DISTANCE);
+					if (absoluteDistance >= DOF_ERROR_MARGIN)
+					{
+
+						// No enfocado
+
+						
+
+						//LOG(INFO) << "Focal lenght: " << FOCAL_DISTANCE << " -> Calculating depth of field values";
+
+						/*gmtl::Vec3f direction = ray.getDir();
+						
+						//Calculate the position where the focus is set
+						normalize(direction);
+						gmtl::Vec3f focalPoint = ray.getOrigin() + direction * DOF_DISTANCE;
+
+						// Variables necesarias para calcular los rayos auxiliares para aplicar el desenfoque
+						gmtl::Point3f dofOrigin;
+						Spectrum dofColor;
+						Ray dofRay;
+
+						//LOG(INFO) << "Camera Position: " << cameraPosition;
+						//LOG(INFO) << "Ray Direction: " << direction;
+
+						// generar varios rayos secundarios
+						for (int sample = 1; sample <= DOF_SAMPLES; ++sample)
+						{
+							// Calculate new Origin point
+							float randX = ruletaRusa() - 0.5f;
+							float randY = ruletaRusa() - 0.5f;
+							float randZ = ruletaRusa() - 0.5f;
+							
+							gmtl::Vec3f calculatedDir = gmtl::Vec3f(randX, randY, randZ);
+												
+
+							// Calculate a new position from which trace a ray
+							//camera.getCameraPosition()-(r/2)*u-(r/2)*v+r*(du)*u+r*(dv)*v
+							dofOrigin = ray.getOrigin() + calculatedDir * DOF_RADIUS;
+
+							// Now calculate different rays that pass through this focal point
+							dofRay = generateRay(dofOrigin, focalPoint);
+
+							dofColor = traceRay(world, dofRay, 1);
+
+							//LOG(INFO) << "Calculating colors for DOF: " << dofColor;
+
+
+							//dofSpectrum[0] += dofColor[0];
+							//dofSpectrum[1] += dofColor[1];
+							//dofSpectrum[2] += dofColor[2];
+
+							dofSpectrum += dofColor;
+
+
+
+
+						}
+
+						dofSpectrum /= DOF_SAMPLES;*/
+
+
+						dofSpectrum = applyDOF(world, ray);
+
+						image[(i * dimX * 3) + (j * 3)] = (image[(i * dimX * 3) + (j * 3)] + dofSpectrum[0]) / 2;
+						image[(i * dimX * 3) + (j * 3) + 1] = (image[(i * dimX * 3) + (j * 3) + 1] + dofSpectrum[1]) / 2;
+						image[(i * dimX * 3) + (j * 3) + 2] = (image[(i * dimX * 3) + (j * 3) + 2] + dofSpectrum[2]) / 2;
+
+					}
+
+
+					
+				}
+			}
+
 
 		}
 
