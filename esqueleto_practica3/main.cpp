@@ -38,14 +38,14 @@ const float AMBIENT_INTENSITY = 0.005f;
 
 const float GO_ON_PROBABILITY = 0.1f;
 
-const int NUMBER_SAMPLES = 20;
+const int NUMBER_SAMPLES = 400;
 
 const int HALTON_NUMBER_1 = 3;
 const int HALTON_NUMBER_2 = 5;
 
 const float DOF_DISTANCE = 24.0f;
 const float DOF_ERROR_MARGIN = 1.0f;
-const float DOF_RADIUS = 2.0f;
+const float DOF_RADIUS = 0.5f;
 const int DOF_SAMPLES = 10;
 
 
@@ -334,6 +334,10 @@ Spectrum indirectRadiance(World* world, Ray& ray, IntersectInfo info, int recurs
 		Spectrum indirectLight = gmtl::Vec3f(1.0f, 1.0f, 1.0f);
 
 		// - Calcular una dirección para siguiente rebote
+
+		
+		
+		
 		float r1 = ruletaRusa();
 		float r2 = ruletaRusa();
 
@@ -345,8 +349,13 @@ Spectrum indirectRadiance(World* world, Ray& ray, IntersectInfo info, int recurs
 		float y = rd * sin(phid);
 		float z = sqrt(1 - (rd * rd));
 
+		gmtl::Vec3f wi = gmtl::Vec3f(x, y, z);
+		float pdf;
+		info.material->Sample(wi, pdf, info);
+
+
 		gmtl::Point3f newOrigin = info.position + info.normal * 0.001f;
-		gmtl::Rayf indirectRay = gmtl::Rayf(newOrigin, gmtl::Vec3f(x, y, z));
+		gmtl::Rayf indirectRay = gmtl::Rayf(newOrigin, wi);
 
 		// - Calcular iluminación para ese rayo(traceRay)
 		indirectLight = indirectLight * traceRay(world, indirectRay, recursivityDepth + 1);
@@ -362,12 +371,10 @@ Spectrum indirectRadiance(World* world, Ray& ray, IntersectInfo info, int recurs
 		// - Multiplicar por el coseno
 		indirectLight = indirectLight * max(gmtl::dot(info.normal, dirNormalized), 0.0f);
 
+		
 		// - Dividir iluminación por el PDF
-		gmtl::Vec3f wi;
-		float pdf;
-		info.material->Sample(wi, pdf, info);
-
-		indirectLight = indirectLight / (pdf * (cos(theta) * M_PI));
+		//indirectLight = indirectLight / (pdf * (cos(theta) * M_PI));
+		indirectLight = indirectLight / pdf;
 
 		// - Dividir por ruleta_rusa_p
 		indirectLight = indirectLight / GO_ON_PROBABILITY;
@@ -722,62 +729,6 @@ void render_image(World* world, unsigned int dimX, unsigned int dimY, float* ima
 					{
 
 						// No enfocado
-
-						
-
-						//LOG(INFO) << "Focal lenght: " << FOCAL_DISTANCE << " -> Calculating depth of field values";
-
-						/*gmtl::Vec3f direction = ray.getDir();
-						
-						//Calculate the position where the focus is set
-						normalize(direction);
-						gmtl::Vec3f focalPoint = ray.getOrigin() + direction * DOF_DISTANCE;
-
-						// Variables necesarias para calcular los rayos auxiliares para aplicar el desenfoque
-						gmtl::Point3f dofOrigin;
-						Spectrum dofColor;
-						Ray dofRay;
-
-						//LOG(INFO) << "Camera Position: " << cameraPosition;
-						//LOG(INFO) << "Ray Direction: " << direction;
-
-						// generar varios rayos secundarios
-						for (int sample = 1; sample <= DOF_SAMPLES; ++sample)
-						{
-							// Calculate new Origin point
-							float randX = ruletaRusa() - 0.5f;
-							float randY = ruletaRusa() - 0.5f;
-							float randZ = ruletaRusa() - 0.5f;
-							
-							gmtl::Vec3f calculatedDir = gmtl::Vec3f(randX, randY, randZ);
-												
-
-							// Calculate a new position from which trace a ray
-							//camera.getCameraPosition()-(r/2)*u-(r/2)*v+r*(du)*u+r*(dv)*v
-							dofOrigin = ray.getOrigin() + calculatedDir * DOF_RADIUS;
-
-							// Now calculate different rays that pass through this focal point
-							dofRay = generateRay(dofOrigin, focalPoint);
-
-							dofColor = traceRay(world, dofRay, 1);
-
-							//LOG(INFO) << "Calculating colors for DOF: " << dofColor;
-
-
-							//dofSpectrum[0] += dofColor[0];
-							//dofSpectrum[1] += dofColor[1];
-							//dofSpectrum[2] += dofColor[2];
-
-							dofSpectrum += dofColor;
-
-
-
-
-						}
-
-						dofSpectrum /= DOF_SAMPLES;*/
-
-
 						dofSpectrum = applyDOF(world, ray);
 
 						image[(i * dimX * 3) + (j * 3)] = (image[(i * dimX * 3) + (j * 3)] + dofSpectrum[0]) / 2;
